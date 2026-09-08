@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, useMemo, useRef, useState } from "react";
 
 type BoxRow = { box: string; location: string };
 type CheckRow = { box: string; systemLocation: string; scannedLocation: string; scans: number; status: "match" | "misplaced" | "missing" | "unregistered" | "duplicate"; action: string; actionZh: string };
@@ -65,7 +65,7 @@ function reconcile(system: BoxRow[], scan: BoxRow[]): CheckRow[] {
     output.push({ box: scanned.box, systemLocation: systemRow?.location ?? "—", scannedLocation: scanned.location || "—", scans: items.length, status, action, actionZh });
   });
   system.forEach((r) => {
-    if (scannedLocations.has(norm(r.location)) && !scanGroups.has(norm(r.box))) output.push({ box: r.box, systemLocation: r.location, scannedLocation: "—", scans: 0, status: "missing", action: "Location scanned; find box or adjust outbound", actionZh: "该库位已盘点，复核实物或办理出库调整" });
+    if (scannedLocations.has(norm(r.location)) && !scanGroups.has(norm(r.box))) output.push({ box: r.box, systemLocation: r.location, scannedLocation: "—", scans: 0, status: "missing", action: "Location scanned; find box or adjust outbound", actionZh: "库位内未发现此箱" });
   });
   const priority: Record<CheckRow["status"], number> = { misplaced: 0, unregistered: 1, duplicate: 2, missing: 3, match: 4 };
   return output.sort((a, b) => priority[a.status] - priority[b.status] || a.box.localeCompare(b.box));
@@ -78,6 +78,7 @@ export default function Home() {
   const [system, setSystem] = useState<BoxRow[]>(demoSystem); const [scan, setScan] = useState<BoxRow[]>(demoScan);
   const [systemFile, setSystemFile] = useState("System inventory · 演示"); const [scanFile, setScanFile] = useState("Daily scan 0904 · 演示"); const [scanSheet, setScanSheet] = useState("Demo · 演示");
   const [filter, setFilter] = useState("all"); const [query, setQuery] = useState(""); const [notice, setNotice] = useState("Demo data loaded · 已载入与你文件结构一致的演示数据");
+  const [dragTarget, setDragTarget] = useState<"system" | "scan" | null>(null);
   const systemInput = useRef<HTMLInputElement>(null); const scanInput = useRef<HTMLInputElement>(null);
   const results = useMemo(() => reconcile(system, scan), [system, scan]);
   const visible = results.filter((r) => (filter === "all" || r.status === filter) && `${r.box}${r.systemLocation}${r.scannedLocation}`.toLowerCase().includes(query.toLowerCase()));
@@ -86,6 +87,7 @@ export default function Home() {
 
   async function readFile(file: File, kind: "system" | "scan") {
     try {
+      if (!/\.(xlsx|xls|csv)$/i.test(file.name)) throw new Error("Please use Excel or CSV · 请选择 Excel 或 CSV 文件");
       const XLSX = await import("xlsx"); const wb = XLSX.read(await file.arrayBuffer(), { type: "array" }); let sheetName = wb.SheetNames[0];
       if (kind === "scan") {
         const valid = wb.SheetNames.filter((name) => { const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, defval: "" }); return !!headerIndex(rows, boxHeaders) && !!headerIndex(rows, scanLocHeaders); });
@@ -98,11 +100,22 @@ export default function Home() {
     } catch (error) { setNotice(`File error · 读取失败：${error instanceof Error ? error.message : "Please check the file format · 请检查文件格式"}`); }
   }
   function onFile(event: ChangeEvent<HTMLInputElement>, kind: "system" | "scan") { const file = event.target.files?.[0]; if (file) readFile(file, kind); event.target.value = ""; }
+  function onDragOver(event: DragEvent<HTMLButtonElement>, kind: "system" | "scan") {
+    event.preventDefault(); event.dataTransfer.dropEffect = "copy"; setDragTarget(kind);
+  }
+  function onDragLeave(event: DragEvent<HTMLButtonElement>) {
+    if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setDragTarget(null);
+  }
+  function onDrop(event: DragEvent<HTMLButtonElement>, kind: "system" | "scan") {
+    event.preventDefault(); setDragTarget(null);
+    if (event.dataTransfer.files.length !== 1) { setNotice("Please drop one file at a time · 每个区域请一次拖入一个文件"); return; }
+    void readFile(event.dataTransfer.files[0], kind);
+  }
   async function exportResults() { const XLSX = await import("xlsx"); const rows = results.filter((r) => r.status !== "match").map((r) => ({ "Box Number 箱号": r.box, "System Location 系统库位": r.systemLocation, "Scanned Location 扫描库位": r.scannedLocation, "Scan Count 扫描次数": r.scans, "Issue Type 差异类型": `${statusText[r.status]} / ${statusZh[r.status]}`, "Recommended Action 处理建议": `${r.action} / ${r.actionZh}` })); const book = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(rows), "Reconciliation 对账"); XLSX.writeFile(book, `box-reconciliation_${scanSheet}.xlsx`); }
 
   return <main><aside className="sidebar"><div className="brand"><span>R</span><div><b>RUNERGY</b><small>Daily Inbound Verification · 每日入库核验</small></div></div><nav><a className="active">⌁ <span>Box Reconciliation<small>逐箱核对</small></span></a><a>▦ <span>Count History<small>盘点历史</small></span></a><a>◎ <span>Location Analysis<small>库位分析</small></span></a><a>⚙ <span>Field Settings<small>字段设置</small></span></a></nav><div className="side-card"><div className="pulse"/><b>Processed on this device</b><small>数据仅在本机处理</small><p>Your inventory files never leave this browser.<br/><small>上传文件不会离开浏览器。</small></p></div><div className="operator"><span>JW</span><div><b>Warehouse Admin</b><small>仓库管理员 · Daily Count</small></div></div></aside>
     <section className="workspace"><header><div><p className="eyebrow">BOX INVENTORY RECONCILIATION <small>逐箱库存核对</small></p><h1>Every box, in the right place.</h1><p className="title-zh">每一个箱，都在正确的位置。</p><p className="subtitle">Connect system inventory to physical scans by box number.<small>通过箱号连接系统库存与现场扫描，定位错库位、漏扫与未入账。</small></p></div><div className="date"><small>SCAN WORKSHEET<br/><i>扫描工作表</i></small><b>{scanSheet}</b></div></header>
-      <div className="upload-grid"><button className="upload-card" onClick={() => systemInput.current?.click()}><span className="step">01</span><span className="file-icon">▤</span><span className="upload-copy"><b>System Box Inventory</b><small>系统箱信息 · {systemFile}</small></span><span className="change">CHANGE 更换 →</span></button><button className="upload-card scan" onClick={() => scanInput.current?.click()}><span className="step">02</span><span className="file-icon">⌗</span><span className="upload-copy"><b>Daily Physical Scan</b><small>每日现场扫描 · {scanFile}</small></span><span className="change">CHANGE 更换 →</span></button><input ref={systemInput} hidden type="file" accept=".xlsx,.xls,.csv" onChange={(e) => onFile(e, "system")}/><input ref={scanInput} hidden type="file" accept=".xlsx,.xls,.csv" onChange={(e) => onFile(e, "scan")}/></div><p className="notice">● {notice}</p>
+      <div className="upload-grid"><button className={`upload-card${dragTarget === "system" ? " dragging" : ""}`} onDragOver={(e) => onDragOver(e, "system")} onDragLeave={onDragLeave} onDrop={(e) => onDrop(e, "system")} onClick={() => systemInput.current?.click()}><span className="step">01</span><span className="file-icon">▤</span><span className="upload-copy"><b>System Box Inventory</b><small>系统箱信息 · {systemFile}</small><span className="upload-hint">{dragTarget === "system" ? "Drop file here · 松开即可导入" : "Drag a file here or click to select · 拖拽文件或点击选择"}</span></span><span className="change">CHANGE 更换 →</span></button><button className={`upload-card scan${dragTarget === "scan" ? " dragging" : ""}`} onDragOver={(e) => onDragOver(e, "scan")} onDragLeave={onDragLeave} onDrop={(e) => onDrop(e, "scan")} onClick={() => scanInput.current?.click()}><span className="step">02</span><span className="file-icon">⌗</span><span className="upload-copy"><b>Daily Physical Scan</b><small>每日现场扫描 · {scanFile}</small><span className="upload-hint">{dragTarget === "scan" ? "Drop file here · 松开即可导入" : "Drag a file here or click to select · 拖拽文件或点击选择"}</span></span><span className="change">CHANGE 更换 →</span></button><input ref={systemInput} hidden type="file" accept=".xlsx,.xls,.csv" onChange={(e) => onFile(e, "system")}/><input ref={scanInput} hidden type="file" accept=".xlsx,.xls,.csv" onChange={(e) => onFile(e, "scan")}/></div><p className="notice" role="status">● {notice}</p>
       <div className="metrics"><article><small>UNIQUE BOXES <i>扫描箱数</i></small><strong>{new Set(scan.map((r) => norm(r.box))).size.toLocaleString()}</strong><span>{scan.length.toLocaleString()} scans · 次扫描</span></article><article><small>ACTION REQUIRED <i>需要处理</i></small><strong className="danger">{issues}</strong><span>issues in this count · 本次差异</span></article><article><small>LOCATION ACCURACY <i>库位准确率</i></small><strong>{accuracy}<i>%</i></strong><span className="bar"><i style={{width:`${accuracy}%`}}/></span></article><article><small>WRONG LOCATION <i>库位不符</i></small><strong className="danger">{count("misplaced")}</strong><span>location moves suggested · 建议调拨</span></article></div>
       <section className="results"><div className="results-head"><div><p className="eyebrow">RECONCILIATION RESULTS <small>核对结果</small></p><h2>Box-Level Exceptions</h2><p className="section-zh">逐箱差异明细</p></div><button className="export" onClick={exportResults}>⇩ Export Action List <small>导出处理清单</small></button></div><div className="toolbar"><div className="filters">{[["all","All","全部"],["misplaced","Wrong Location","库位不符"],["unregistered","Not in System","系统无此箱"],["missing","Not Scanned","未扫描"],["duplicate","Duplicate","重复扫描"],["match","Matched","一致"]].map(([v,en,zh])=><button key={v} className={filter===v?"selected":""} onClick={()=>setFilter(v)}>{en}<small>{zh}</small></button>)}</div><label className="search">⌕<input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Search box or location · 搜索箱号或库位"/></label></div><div className="table-wrap"><table><thead><tr><th>Box Number<small>箱号</small></th><th>System Location<small>系统库位</small></th><th>Scanned Location<small>扫描库位</small></th><th>Scans<small>扫描次数</small></th><th>Status<small>状态</small></th><th>Recommended Action<small>处理建议</small></th></tr></thead><tbody>{visible.map((r)=><tr key={`${r.box}-${r.status}`}><td><b>{r.box}</b></td><td><code>{r.systemLocation}</code></td><td><code>{r.scannedLocation}</code></td><td>{r.scans}</td><td><span className={`status ${r.status}`}>{statusText[r.status]}<small>{statusZh[r.status]}</small></span></td><td className="suggestion"><b>{r.action}</b><small>{r.actionZh}</small></td></tr>)}</tbody></table>{!visible.length&&<div className="empty">No records match this filter.<small>当前筛选条件下没有记录。</small></div>}</div></section><footer>RUNERGY · Daily Inbound Verification <span>润阳 · 每日入库核验 · Auto-selects the latest valid scan worksheet</span></footer>
     </section></main>;

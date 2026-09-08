@@ -32,3 +32,7 @@ h1,h2 { font-family:Georgia, "Songti SC", serif; font-weight:500; margin:0; } h1
 footer{display:flex;justify-content:space-between;color:#839089;font-size:11px;padding:18px 2px 0;letter-spacing:.02em}
 @media(max-width:900px){main{display:block}.sidebar{position:static;width:100%;min-height:auto;flex-direction:row;align-items:center;padding:15px 20px}.brand{padding:0}.brand small,.side-card,.operator,nav a:not(.active){display:none}nav{margin-left:auto}.workspace{padding:30px 20px}.upload-grid,.metrics{grid-template-columns:1fr 1fr}.metrics article:nth-child(2){border-right:0}.metrics article:nth-child(-n+2){border-bottom:1px solid var(--line)}}
 @media(max-width:620px){header{display:block}.date{display:none}h1{font-size:36px}.upload-grid,.metrics{grid-template-columns:1fr}.metrics article{border-right:0;border-bottom:1px solid var(--line)}.toolbar{align-items:stretch;flex-direction:column}.search{width:100%}.change{display:none}.workspace{padding:26px 12px}.results-head{padding:20px 16px}.toolbar{padding:10px 16px}}
+
+.upload-card.dragging { border-color:var(--green); background:var(--green-soft); outline:2px dashed var(--green); outline-offset:3px; }
+.upload-card:focus-visible { outline:2px solid var(--green); outline-offset:3px; }
+.upload-hint { display:block; margin-top:8px; font-size:14px; line-height:1.5; color:var(--green); }
