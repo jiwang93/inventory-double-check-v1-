@@ -2,7 +2,10 @@
 
 import { ChangeEvent, DragEvent, useMemo, useRef, useState } from "react";
 
-type BoxRow = { box: string; location: string };
+import CustomerLookup from "./CustomerLookup";
+import { detectColumns } from "./customer-data";
+
+type BoxRow = { box: string; location: string; workOrder?: string; power?: string; grade?: string };
 type CheckRow = { box: string; systemLocation: string; scannedLocation: string; scans: number; status: "match" | "misplaced" | "missing" | "unregistered" | "duplicate"; action: string; actionZh: string };
 
 const demoSystem: BoxRow[] = [
@@ -36,6 +39,8 @@ function parseRows(rows: unknown[][], kind: "system" | "scan") {
   const locCell = headerIndex(rows, kind === "system" ? systemLocHeaders : scanLocHeaders);
   if (!boxCell || !locCell) throw new Error(kind === "system" ? "Could not find Box Number and Location columns · 找不到箱号和库位列" : "Could not find Scanned Box and Scanned Location columns · 找不到扫描箱号和扫描库位列");
   const start = Math.max(boxCell.row, locCell.row) + 1;
+  const metadata = detectColumns(rows[boxCell.row]);
+  const workOrderCol = kind === "system" ? metadata.workOrder : -1;
   let currentLocation = "";
   const result: BoxRow[] = [];
   for (let i = start; i < rows.length; i++) {
@@ -43,7 +48,7 @@ function parseRows(rows: unknown[][], kind: "system" | "scan") {
     const location = text(row[locCell.col]);
     if (location) currentLocation = location;
     const box = text(row[boxCell.col]);
-    if (box) result.push({ box, location: kind === "scan" ? currentLocation : location });
+    if (box) result.push({ box, location: kind === "scan" ? currentLocation : location, workOrder: workOrderCol >= 0 ? text(row[workOrderCol]) : undefined, power: kind === "system" && metadata.power >= 0 ? text(row[metadata.power]) : undefined, grade: kind === "system" && metadata.grade >= 0 ? text(row[metadata.grade]) : undefined });
   }
   return result;
 }
@@ -116,6 +121,7 @@ export default function Home() {
   return <main><aside className="sidebar"><div className="brand"><span>R</span><div><b>RUNERGY</b><small>Daily Inbound Verification · 每日入库核验</small></div></div><nav><a className="active">⌁ <span>Box Reconciliation<small>逐箱核对</small></span></a><a>▦ <span>Count History<small>盘点历史</small></span></a><a>◎ <span>Location Analysis<small>库位分析</small></span></a><a>⚙ <span>Field Settings<small>字段设置</small></span></a></nav><div className="side-card"><div className="pulse"/><b>Processed on this device</b><small>数据仅在本机处理</small><p>Your inventory files never leave this browser.<br/><small>上传文件不会离开浏览器。</small></p></div><div className="operator"><span>JW</span><div><b>Warehouse Admin</b><small>仓库管理员 · Daily Count</small></div></div></aside>
     <section className="workspace"><header><div><p className="eyebrow">BOX INVENTORY RECONCILIATION <small>逐箱库存核对</small></p><h1>Every box, in the right place.</h1><p className="title-zh">每一个箱，都在正确的位置。</p><p className="subtitle">Connect system inventory to physical scans by box number.<small>通过箱号连接系统库存与现场扫描，定位错库位、漏扫与未入账。</small></p></div><div className="date"><small>SCAN WORKSHEET<br/><i>扫描工作表</i></small><b>{scanSheet}</b></div></header>
       <div className="upload-grid"><button className={`upload-card${dragTarget === "system" ? " dragging" : ""}`} onDragOver={(e) => onDragOver(e, "system")} onDragLeave={onDragLeave} onDrop={(e) => onDrop(e, "system")} onClick={() => systemInput.current?.click()}><span className="step">01</span><span className="file-icon">▤</span><span className="upload-copy"><b>System Box Inventory</b><small>系统箱信息 · {systemFile}</small><span className="upload-hint">{dragTarget === "system" ? "Drop file here · 松开即可导入" : "Drag a file here or click to select · 拖拽文件或点击选择"}</span></span><span className="change">CHANGE 更换 →</span></button><button className={`upload-card scan${dragTarget === "scan" ? " dragging" : ""}`} onDragOver={(e) => onDragOver(e, "scan")} onDragLeave={onDragLeave} onDrop={(e) => onDrop(e, "scan")} onClick={() => scanInput.current?.click()}><span className="step">02</span><span className="file-icon">⌗</span><span className="upload-copy"><b>Daily Physical Scan</b><small>每日现场扫描 · {scanFile}</small><span className="upload-hint">{dragTarget === "scan" ? "Drop file here · 松开即可导入" : "Drag a file here or click to select · 拖拽文件或点击选择"}</span></span><span className="change">CHANGE 更换 →</span></button><input ref={systemInput} hidden type="file" accept=".xlsx,.xls,.csv" onChange={(e) => onFile(e, "system")}/><input ref={scanInput} hidden type="file" accept=".xlsx,.xls,.csv" onChange={(e) => onFile(e, "scan")}/></div><p className="notice" role="status">● {notice}</p>
+      <CustomerLookup inventory={system} />
       <div className="metrics"><article><small>UNIQUE BOXES <i>扫描箱数</i></small><strong>{new Set(scan.map((r) => norm(r.box))).size.toLocaleString()}</strong><span>{scan.length.toLocaleString()} scans · 次扫描</span></article><article><small>ACTION REQUIRED <i>需要处理</i></small><strong className="danger">{issues}</strong><span>issues in this count · 本次差异</span></article><article><small>LOCATION ACCURACY <i>库位准确率</i></small><strong>{accuracy}<i>%</i></strong><span className="bar"><i style={{width:`${accuracy}%`}}/></span></article><article><small>WRONG LOCATION <i>库位不符</i></small><strong className="danger">{count("misplaced")}</strong><span>location moves suggested · 建议调拨</span></article></div>
       <section className="results"><div className="results-head"><div><p className="eyebrow">RECONCILIATION RESULTS <small>核对结果</small></p><h2>Box-Level Exceptions</h2><p className="section-zh">逐箱差异明细</p></div><button className="export" onClick={exportResults}>⇩ Export Action List <small>导出处理清单</small></button></div><div className="toolbar"><div className="filters">{[["all","All","全部"],["misplaced","Wrong Location","库位不符"],["unregistered","Not in System","系统无此箱"],["missing","Not Scanned","未扫描"],["duplicate","Duplicate","重复扫描"],["match","Matched","一致"]].map(([v,en,zh])=><button key={v} className={filter===v?"selected":""} onClick={()=>setFilter(v)}>{en}<small>{zh}</small></button>)}</div><label className="search">⌕<input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Search box or location · 搜索箱号或库位"/></label></div><div className="table-wrap"><table><thead><tr><th>Box Number<small>箱号</small></th><th>System Location<small>系统库位</small></th><th>Scanned Location<small>扫描库位</small></th><th>Scans<small>扫描次数</small></th><th>Status<small>状态</small></th><th>Recommended Action<small>处理建议</small></th></tr></thead><tbody>{visible.map((r)=><tr key={`${r.box}-${r.status}`}><td><b>{r.box}</b></td><td><code>{r.systemLocation}</code></td><td><code>{r.scannedLocation}</code></td><td>{r.scans}</td><td><span className={`status ${r.status}`}>{statusText[r.status]}<small>{statusZh[r.status]}</small></span></td><td className="suggestion"><b>{r.action}</b><small>{r.actionZh}</small></td></tr>)}</tbody></table>{!visible.length&&<div className="empty">No records match this filter.<small>当前筛选条件下没有记录。</small></div>}</div></section><footer>RUNERGY · Daily Inbound Verification <span>润阳 · 每日入库核验 · Auto-selects the latest valid scan worksheet</span></footer>
     </section></main>;
