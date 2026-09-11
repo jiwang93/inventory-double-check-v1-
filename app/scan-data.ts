@@ -3,6 +3,14 @@ const headerKey = (value: unknown) => text(value).toLowerCase().replace(/[\s._-]
 const boxHeaders = ["箱号", "scanned box n.", "扫描箱号", "box", "box no", "box number", "c19"];
 const locationHeaders = ["scanned location", "查验库位名称", "扫描库位", "实盘库位", "location", "库位", "位置", "库位编码", "库位名称", "仓位", "货位"];
 
+export function selectScanSheet(sheets: { name: string; rows: unknown[][] }[]) {
+  const valid = sheets.filter(sheet => scanColumns(sheet.rows) && parseScanRows(sheet.rows).length > 0);
+  const main = valid.find(sheet => sheet.name.trim() === "库位箱号");
+  if (main) return main.name;
+  const scans = valid.filter(sheet => !/备注|范围外|说明|汇总|notes|out.of.scope|summary/i.test(sheet.name));
+  return scans[scans.length - 1]?.name ?? null;
+}
+
 export function scanColumns(rows: unknown[][]) {
   const find = (aliases: string[]) => {
     const keys = new Set(aliases.map(headerKey));

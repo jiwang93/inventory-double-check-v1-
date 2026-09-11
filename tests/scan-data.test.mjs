@@ -1,6 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseScanRows, scanColumns } from "../app/scan-data.ts";
+import { parseScanRows, scanColumns, selectScanSheet } from "../app/scan-data.ts";
+
+test("merged workbook selects the main scans instead of later notes or out-of-scope records", () => {
+  const rows = [["location", "box NO"], ["C01", "B1"]];
+  assert.equal(selectScanSheet([{ name: "库位箱号", rows }, { name: "原表备注", rows }, { name: "范围外记录", rows }]), "库位箱号");
+  assert.equal(selectScanSheet([{ name: "0909", rows }, { name: "0911", rows }, { name: "原表备注", rows }]), "0911");
+  assert.equal(selectScanSheet([{ name: "范围外记录", rows }]), null);
+  assert.equal(selectScanSheet([{ name: "库位箱号", rows: rows.slice(0, 1) }, { name: "0911", rows }]), "0911");
+});
 
 test("imports location / box NO without altering box identifiers or duplicates", () => {
   assert.deepEqual(parseScanRows([["location", "box NO"], ["C60", "000123456789012345"], ["C60", "000123456789012345"]]), [
