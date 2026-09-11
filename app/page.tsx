@@ -4,6 +4,7 @@ import { ChangeEvent, DragEvent, useMemo, useRef, useState } from "react";
 
 import CustomerLookup from "./CustomerLookup";
 import { detectColumns } from "./customer-data";
+import { parseScanRows, scanColumns } from "./scan-data";
 
 type BoxRow = { box: string; location: string; workOrder?: string; power?: string; grade?: string };
 type CheckRow = { box: string; systemLocation: string; scannedLocation: string; scans: number; status: "match" | "misplaced" | "missing" | "unregistered" | "duplicate"; action: string; actionZh: string };
@@ -95,10 +96,10 @@ export default function Home() {
       if (!/\.(xlsx|xls|csv)$/i.test(file.name)) throw new Error("Please use Excel or CSV · 请选择 Excel 或 CSV 文件");
       const XLSX = await import("xlsx"); const wb = XLSX.read(await file.arrayBuffer(), { type: "array" }); let sheetName = wb.SheetNames[0];
       if (kind === "scan") {
-        const valid = wb.SheetNames.filter((name) => { const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, defval: "" }); return !!headerIndex(rows, boxHeaders) && !!headerIndex(rows, scanLocHeaders); });
+        const valid = wb.SheetNames.filter((name) => { const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, defval: "" }); return !!scanColumns(rows); });
         sheetName = valid[valid.length - 1] ?? sheetName;
       }
-      const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, defval: "", raw: false }); const parsed = parseRows(rows, kind);
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, defval: "", raw: false }); const parsed = kind === "scan" ? parseScanRows(rows) : parseRows(rows, kind);
       if (!parsed.length) throw new Error("No valid box numbers found · 没有识别到有效箱号");
       if (kind === "system") { setSystem(parsed); setSystemFile(file.name); } else { setScan(parsed); setScanFile(file.name); setScanSheet(sheetName); }
       setNotice(`Loaded ${file.name}${kind === "scan" ? ` · Sheet ${sheetName}` : ""} · ${parsed.length.toLocaleString()} records / 已读取 ${parsed.length.toLocaleString()} 条记录`);
